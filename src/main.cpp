@@ -10,6 +10,9 @@
 #include "al/graphics/al_Image.hpp"
 #include "soundObject.hpp"
 
+// reference: http://gamma.cs.unc.edu/GSOUND/gsound_aes41st.pdf, http://gamma.cs.unc.edu/SOUND09/
+// Next Step: Paths de-duplication, generate image source from paths, then apply to sound
+// further step: Spatial division(octree), doppler shifting, GUI
 using namespace al;
 
 struct MyApp : App {
