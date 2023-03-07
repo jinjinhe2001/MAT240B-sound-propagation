@@ -4,14 +4,6 @@ build
 
 # ignore potentially big files
 *.log
-*.png
-*.PNG
-*.gif
-*.GIF
-*.jpg
-*.JPG
-*.jpeg
-*.JPEG
 *.tiff
 *.TIFF
 *.bmp
