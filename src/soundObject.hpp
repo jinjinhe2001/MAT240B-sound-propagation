@@ -88,6 +88,7 @@ struct Path
     Vec2f start;
     Vec2f end;
     std::vector<int> indexArray;
+    std::vector<Vec2f> hitPoint;
     bool operator<(const Path& p) const {
         return indexArray.size() < p.indexArray.size();
     }
@@ -162,11 +163,13 @@ struct Listener
         if (temp > alpha && (temp < t || t < alpha)) {
             p.start = source.pos;
             p.end = pos;
+            p.hitPoint.push_back(source.pos);
             paths.push_back(p);
         } else if (temp < alpha && t > alpha) {
             p.start = source.pos;
             if (p.indexArray.size() < depth) {
                 p.indexArray.push_back(hitLine->index);
+                p.hitPoint.push_back(r(t));
                 reflectRay(t, r, hitLine, boundry, source, p);
             }
         }
@@ -197,11 +200,13 @@ struct Listener
             if (temp > alpha && (temp < t || t < alpha)) {
                 p.start = source.pos;
                 p.end = pos;
+                p.hitPoint.push_back(source.pos);
                 paths.push_back(p);
                 //std::cout<< r(temp) << std::endl;
             } else if (t > alpha) {
                 p.start = source.pos;
                 p.indexArray.push_back(hitLine->index);
+                p.hitPoint.push_back(r(t));
                 reflectRay(t, r, hitLine, boundry, source, p);
                 //std::cout<< temp << r(t) << std::endl;
             }

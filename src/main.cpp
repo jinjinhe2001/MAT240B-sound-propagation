@@ -16,6 +16,7 @@ struct MyApp : App {
   Boundry boundry;
   Source source;
   Listener listener;
+  std::vector<Mesh> rays;
 
   void onCreate() override {
     boundry.resizeRect(4.0f, 4.0f, Vec2f(0, 0));
@@ -28,13 +29,16 @@ struct MyApp : App {
     source.pos = Vec2f(0, 0);
     listener.pos = Vec2f(-1, -1);
     listener.scatterRay(500, boundry, source);
-    std::cout<<listener.paths.size() << std::endl;;
     for (auto p : listener.paths) {
-      std::cout<<"path:"<<"\n";
-      for (auto index : p.indexArray) {
-        std::cout<<index<<"+";
+      Mesh m;
+      m.primitive(Mesh::LINE_STRIP);
+      m.vertex(listener.pos);
+      m.color(RGB(1, 0, 0));
+      for (auto point : p.hitPoint) {
+        m.vertex(Vec3f(point, 0.0f));
+        m.color(RGB(0, 0, 1));
+        rays.push_back(m);
       }
-      std::cout<<"\n";
     }
   }
 
@@ -51,6 +55,13 @@ struct MyApp : App {
     g.pushMatrix();
     g.draw(boundry.mesh);
     g.popMatrix();
+    for (auto& ray : rays) {
+      g.polygonLine();
+      g.pushMatrix();
+      g.meshColor();
+      g.draw(ray);
+      g.popMatrix();
+    }
   }
 
   void onSound(AudioIOData& io) override {
