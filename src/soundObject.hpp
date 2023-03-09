@@ -110,7 +110,7 @@ struct Path
         for (auto index : indexArray) {
             Line& line = lines.at(index);
             image = reflectPoint(line.start, line.end, image);
-            reflectAbsorb *= 0.8f;
+            reflectAbsorb *= 0.95f;
         }
         delay = (end - image).mag() * 20.0f / 340.0f;
         reflectAbsorb = 1 / (end - image).mag();
