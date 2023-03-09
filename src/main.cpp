@@ -6,6 +6,7 @@
 
 // for devel branch
 #include "al/app/al_App.hpp"
+#include "al/app/al_GUIDomain.hpp"
 #include "al/graphics/al_Shapes.hpp"
 #include "al/graphics/al_Image.hpp"
 #include "soundObject.hpp"
@@ -20,6 +21,7 @@ struct MyApp : App {
   Source source;
   Listener listener;
   std::vector<Mesh> rays;
+  ParameterBool enableReflect{"enable reflect", "", 1.0};
 
   void onCreate() override {
     boundry.resizeRect(4.0f, 4.0f, Vec2f(0, 0));
@@ -37,11 +39,15 @@ struct MyApp : App {
       m.primitive(Mesh::LINE_STRIP);
       m.vertex(listener.pos);
       m.color(RGB(1, 0, 0));
+      std::cout << p << std::endl;
+      float randomColor = (float)random() / RAND_MAX;
       for (auto point : p.hitPoint) {
         m.vertex(Vec3f(point, 0.0f));
-        m.color(RGB(0, 0, 1));
-        rays.push_back(m);
+        m.color(RGB(randomColor, randomColor, 1));
       }
+      m.vertex(source.pos);
+      m.color(RGB(0, 1, 0));
+      rays.push_back(m);
     }
   }
 
@@ -49,6 +55,8 @@ struct MyApp : App {
     return true;
   }
   void onAnimate(double dt) override {
+    nav().pos(Vec3f(0, 0, 8));
+    nav().faceToward(Vec3f(0, 0, 0));
   }
 
   void onDraw(Graphics& g) override {
@@ -65,6 +73,10 @@ struct MyApp : App {
       g.draw(ray);
       g.popMatrix();
     }
+    g.pushMatrix();
+    g.color(RGB(0, 1, 0));
+    g.draw(source.circle);
+    g.popMatrix();
   }
 
   void onSound(AudioIOData& io) override {
@@ -81,8 +93,26 @@ struct MyApp : App {
       int idx = frame * channels;
       io.out(0) = source.playerTS.soundFile.data[source.playerTS.player.frame + idx];
       io.out(1) = source.playerTS.soundFile.data[source.playerTS.player.frame + idx + second];
+      if (enableReflect) {
+        float ds = 0;
+        for (auto path : listener.paths) {
+          long long int index = source.playerTS.player.frame + idx;
+          long long int offset = source.playerTS.soundFile.sampleRate * path.delay;
+          index -= offset;
+          if (index < 0) continue;
+          ds += source.playerTS.soundFile.data[index] * path.absorb * path.reflectAbsorb;
+          io.out(0) += source.playerTS.soundFile.data[index] * path.absorb * path.reflectAbsorb;
+          io.out(1) += source.playerTS.soundFile.data[index + second] * path.absorb * path.reflectAbsorb;
+        }
+      }
     }
-    source.playerTS.player.frame += bufferLength;
+    source.playerTS.player.frame = (source.playerTS.player.frame + bufferLength);
+  }
+
+  void onInit() override {
+    auto GUIdomain = GUIDomain::enableGUI(defaultWindowDomain());
+    auto& gui = GUIdomain->newGUI();
+    gui.add(enableReflect);
   }
 };
 
