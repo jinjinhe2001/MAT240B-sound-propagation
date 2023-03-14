@@ -1,5 +1,6 @@
 #include <iostream>
 #include <memory>
+#include <mutex>
 
 // for master branch
 // #include "al/core.hpp"
@@ -9,6 +10,8 @@
 #include "al/app/al_GUIDomain.hpp"
 #include "al/graphics/al_Shapes.hpp"
 #include "al/graphics/al_Image.hpp"
+#include "al/io/al_Imgui.hpp"
+#include "al/math/al_Ray.hpp"
 #include "soundObject.hpp"
 
 // reference: http://gamma.cs.unc.edu/GSOUND/gsound_aes41st.pdf, http://gamma.cs.unc.edu/SOUND09/
@@ -16,34 +19,125 @@
 // further step: Spatial division(octree), doppler shifting, GUI
 using namespace al;
 
-struct MyApp : App {
+struct MyApp : App
+{
   Boundry boundry;
   Source source;
   Listener listener;
   std::vector<Mesh> rays;
-  ParameterBool enableReflect{"enable reflect", "", 1.0};
+  Vec2f listenerDir;
+  std::mutex mLock;
+  bool enableAddLine = false;
 
-  void onCreate() override {
-    boundry.resizeRect(4.0f, 4.0f, Vec2f(0, 0));
-    nav().pos(Vec3f(0, 0, 8));
-    Ray r(Vec2f(0, 0), Vec2f(1, 0));
-    std::cout<< r.lineDetect(Line(Vec2f(-1, 1), Vec2f(-2, -2))) <<std::endl;
-    std::cout<< r.circleDetect(Vec2f(1, 0), 2.0f) <<std::endl;
-    
+  bool enableReflect = true;
+
+  void onCreate() override
+  {
+    addScene(boundry);
+    nav().pos(Vec3f(0, 0, 25));
+    Ray2d r(Vec2f(0, 0), Vec2f(1, 0));
+
     source.init("./data/pno-cs.wav");
     source.pos = Vec2f(0, 0);
-    listener.pos = Vec2f(-1, -1);
+    listener.pos = Vec2f(1, -1);
     listener.scatterRay(500, boundry, source);
-    for (auto p : listener.paths) {
+    for (auto p : listener.paths)
+    {
       Mesh m;
       m.primitive(Mesh::LINE_STRIP);
       m.vertex(listener.pos);
       m.color(RGB(1, 0, 0));
-      std::cout << p << std::endl;
-      float randomColor = (float)random() / RAND_MAX;
-      for (auto point : p.hitPoint) {
+      for (auto point : p.hitPoint)
+      {
         m.vertex(Vec3f(point, 0.0f));
-        m.color(RGB(randomColor, randomColor, 1));
+        m.color(RGB(0.5f, 0.5f, 1));
+      }
+      m.vertex(source.pos);
+      m.color(RGB(0, 1, 0));
+      rays.push_back(m);
+    }
+    navControl().disable();
+  }
+
+  bool onKeyDown(Keyboard const &k) override
+  {
+    switch (k.key())
+    {
+    case 'w':
+    {
+      listenerDir.y = 0.01f;
+    }
+    break;
+    case 's':
+    {
+      listenerDir.y = -0.01f;
+    }
+    break;
+    case 'a':
+    {
+      listenerDir.x = -0.01f;
+    }
+    break;
+    case 'd':
+    {
+      listenerDir.x = 0.01f;
+    }
+    break;
+    }
+    return true;
+  }
+
+  bool onKeyUp(Keyboard const &k) override
+  {
+    switch (k.key())
+    {
+    case 'w':
+    {
+      listenerDir.y = 0.0f;
+    }
+    break;
+    case 's':
+    {
+      listenerDir.y = 0.0f;
+    }
+    break;
+    case 'a':
+    {
+      listenerDir.x = 0.0f;
+    }
+    break;
+    case 'd':
+    {
+      listenerDir.x = 0.0f;
+    }
+    break;
+    }
+    return true;
+  }
+
+  void onAnimate(double dt) override
+  {
+    listener.pos += listenerDir;
+    nav().pos(Vec3f(0, 0, 12));
+    nav().faceToward(Vec3f(0, 0, 0));
+    if (listenerDir.mag() > alpha)
+    {
+      mLock.lock();
+      listener.paths.clear();
+      listener.scatterRay(500, boundry, source);
+      mLock.unlock();
+    }
+    rays.clear();
+    for (auto p : listener.paths)
+    {
+      Mesh m;
+      m.primitive(Mesh::LINE_STRIP);
+      m.vertex(listener.pos);
+      m.color(RGB(1, 0, 0));
+      for (auto point : p.hitPoint)
+      {
+        m.vertex(Vec3f(point, 0.0f));
+        m.color(RGB(0.5f, 0.5f, 1));
       }
       m.vertex(source.pos);
       m.color(RGB(0, 1, 0));
@@ -51,22 +145,16 @@ struct MyApp : App {
     }
   }
 
-  bool onKeyDown(Keyboard const& k) override {
-    return true;
-  }
-  void onAnimate(double dt) override {
-    nav().pos(Vec3f(0, 0, 8));
-    nav().faceToward(Vec3f(0, 0, 0));
-  }
-
-  void onDraw(Graphics& g) override {
+  void onDraw(Graphics &g) override
+  {
     g.depthTesting(true);
     g.clear(0.2);
     g.polygonLine();
     g.pushMatrix();
     g.draw(boundry.mesh);
     g.popMatrix();
-    for (auto& ray : rays) {
+    for (auto &ray : rays)
+    {
       g.polygonLine();
       g.pushMatrix();
       g.meshColor();
@@ -77,48 +165,137 @@ struct MyApp : App {
     g.color(RGB(0, 1, 0));
     g.draw(source.circle);
     g.popMatrix();
+
+    drawImGUI(g);
   }
 
-  void onSound(AudioIOData& io) override {
-  
+  void onSound(AudioIOData &io) override
+  {
+
     int frames = (int)io.framesPerBuffer();
     int channels = source.playerTS.soundFile.channels;
     int bufferLength = frames * channels;
-    if ((int)source.buffer.size() < bufferLength) {
+    if ((int)source.buffer.size() < bufferLength)
+    {
       source.buffer.resize(bufferLength);
     }
     int second = (channels < 2) ? 0 : 1;
-    while (io()) {
+    while (io())
+    {
       int frame = (int)io.frame();
       int idx = frame * channels;
-      io.out(0) = source.playerTS.soundFile.data[source.playerTS.player.frame + idx];
-      io.out(1) = source.playerTS.soundFile.data[source.playerTS.player.frame + idx + second];
-      if (enableReflect) {
+      if (enableReflect)
+      {
         float ds = 0;
-        for (auto path : listener.paths) {
+        mLock.lock();
+        io.out(0) = 0;
+        io.out(1) = 0;
+        for (auto path : listener.paths)
+        {
           long long int index = source.playerTS.player.frame + idx;
           long long int offset = source.playerTS.soundFile.sampleRate * path.delay;
           index -= offset;
-          if (index < 0) continue;
-          ds += source.playerTS.soundFile.data[index] * path.absorb * path.reflectAbsorb;
-          io.out(0) += source.playerTS.soundFile.data[index] * path.absorb * path.reflectAbsorb;
-          io.out(1) += source.playerTS.soundFile.data[index + second] * path.absorb * path.reflectAbsorb;
+          if (index < 0)
+            continue;
+          float s = (source.playerTS.soundFile.data[index] + source.playerTS.soundFile.data[index + second]) * 0.5f;
+          //ds += source.playerTS.soundFile.data[index] * path.absorb * path.reflectAbsorb;
+          Vec2f dir = path.dir;
+          float cosTheta = dir.dot(listener.leftDirection);
+          if (cosTheta > 0) {
+            io.out(0) += s * path.absorb * path.reflectAbsorb * (0.0 + 0.5 * cosTheta);
+            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.0);
+          } else {
+            io.out(0) += s * path.absorb * path.reflectAbsorb * 0.0f;
+            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.0 + 0.5 * -cosTheta);
+          }
         }
+        mLock.unlock();
+      }
+      else
+      {
+        io.out(0) = source.playerTS.soundFile.data[source.playerTS.player.frame + idx];
+        io.out(1) = source.playerTS.soundFile.data[source.playerTS.player.frame + idx + second];
       }
     }
-    source.playerTS.player.frame = (source.playerTS.player.frame + bufferLength);
+    source.playerTS.player.frame = (source.playerTS.player.frame + bufferLength) % (source.playerTS.soundFile.frameCount * 2);
   }
 
-  void onInit() override {
-    auto GUIdomain = GUIDomain::enableGUI(defaultWindowDomain());
-    auto& gui = GUIdomain->newGUI();
-    gui.add(enableReflect);
+  void onInit() override
+  {
+    imguiInit();
+  }
+
+  void onExit() override { imguiShutdown(); }
+
+  void drawImGUI(Graphics &g)
+  {
+    imguiBeginFrame();
+
+    ImGui::Begin("GUI");
+    static bool _enableReflect = true;
+    ImGui::Checkbox("Enable reflect", &_enableReflect);
+    enableReflect = _enableReflect;
+
+    static float vec2a[2] = {-1.0f, 0.0f};
+    ImGui::SliderFloat2("Listener Direction", vec2a, -1.0f, 1.0f);
+    listener.leftDirection = vec2a;
+
+    static bool _addLine = false;
+    ImGui::Checkbox("Add Line", &_addLine);
+    enableAddLine = _addLine;
+
+    ImGui::End();
+    imguiEndFrame();
+    imguiDraw();
+  }
+  
+  Vec3d unproject(Vec3d screenPos)
+  {
+    auto &g = graphics();
+    auto mvp = g.projMatrix() * g.viewMatrix() * g.modelMatrix();
+    Matrix4d invprojview = Matrix4d::inverse(mvp);
+    Vec4d worldPos4 = invprojview.transform(screenPos);
+    return worldPos4.sub<3>(0) / worldPos4.w;
+  }
+
+  Rayd getPickRay(int screenX, int screenY)
+  {
+    Rayd r;
+    Vec3d screenPos;
+    screenPos.x = (screenX * 1. / width()) * 2. - 1.;
+    screenPos.y = ((height() - screenY) * 1. / height()) * 2. - 1.;
+    screenPos.z = -1.;
+    Vec3d worldPos = unproject(screenPos);
+    r.origin().set(worldPos);
+
+    screenPos.z = 1.;
+    worldPos = unproject(screenPos);
+    r.direction().set(worldPos);
+    r.direction() -= r.origin();
+    r.direction().normalize();
+    return r;
+  }
+  
+  bool onMouseDown(const Mouse &m) override
+  {
+    if (enableAddLine) {
+      Rayd r = getPickRay(m.x(), m.y());
+      if (fabs(r.direction().z) < alpha) return false;
+      double a = -r.origin().z / r.direction().z;
+      Vec2f hitPoint = Vec2f((a * r.direction() + r.origin()).x, (a * r.direction() + r.origin()).y);
+      //std::cout<<"1"<<std::endl;
+      Vec2f start = hitPoint - Vec2f(0.5f, 0);
+      Vec2f end = hitPoint + Vec2f(0.5f, 0);
+      boundry.addLine(start, end);
+      boundry.Line2Mesh(Line(start, end));
+      onAnimate(0);
+    }
+    return true;
   }
 };
 
-
-
-int main() {
+int main()
+{
   MyApp app;
   app.configureAudio(44100, 512, 2, 0);
   app.dimensions(600, 400);

@@ -25,12 +25,12 @@ struct Line
     }
 };
 
-struct Ray
+struct Ray2d
 {
     Vec2f ori;
     Vec2f dir;
-    Ray() {}
-    Ray(Vec2f o, Vec2f d) : ori(o), dir(d) {}
+    Ray2d() {}
+    Ray2d(Vec2f o, Vec2f d) : ori(o), dir(d) {}
     Vec2f operator()(float t)
     {
         return ori + dir * t;
@@ -38,7 +38,8 @@ struct Ray
 
     float lineDetect(Line line)
     {
-        Vec2f v1 = line.start - ori;
+        // Mystery bug appears in a case that is extremely difficult to reproduce.
+        /*Vec2f v1 = line.start - ori;
         Vec2f lineDir = (line.end - line.start).normalize();
         float t1 = v1.dot(dir);
         Vec2f point = ori + dir * t1;
@@ -48,7 +49,15 @@ struct Ray
         float t = t1 + t2;
         if (fabs(((ori + dir * t) - line.start).normalize().dot(lineDir) - 1) < alpha)
             return t;
-        return t1 - t2;
+        return t1 - t2;*/
+        float bigY = dir.y * (line.start.x - line.end.x) - dir.x * (line.start.y - line.end.y);
+        float bigX = dir.x * (line.end.y - ori.y) - dir.y * (line.end.x - ori.x);
+        if (fabs(bigY) < alpha) return -1;
+        float a = bigX / bigY;
+        if (a < 0 || a > 1) return -1;
+        Vec2f hitPoint = line.start * a + (1 - a) * line.end;
+        float t = (hitPoint - ori).dot(dir);
+        return t;
     }
 
     float circleDetect(Vec2f pos, float radius)
@@ -65,7 +74,7 @@ struct Ray
         return t1;
     }
 
-    friend std::ostream &operator<<(std::ostream &, Ray &r)
+    friend std::ostream &operator<<(std::ostream &, Ray2d &r)
     {
         std::cout << r.ori << ", " << r.dir;
         return std::cout;
@@ -101,9 +110,12 @@ struct Path
     std::vector<int> indexArray;
     std::vector<Vec2f> hitPoint;
     Vec2f image; // listener's image source
+    float dist;
     float delay;
     float absorb = 1.0f;
     float reflectAbsorb = 1.0f;
+    float scale = 10.0f;
+    Vec2f dir;
 
     void calculateImageSource(std::vector<Line>& lines) {
         image = start;
@@ -112,8 +124,15 @@ struct Path
             image = reflectPoint(line.start, line.end, image);
             reflectAbsorb *= 0.95f;
         }
-        delay = (end - image).mag() * 20.0f / 340.0f;
-        reflectAbsorb = 1 / (end - image).mag();
+        delay = (end - image).mag() * scale / 340.0f;
+        dist = (end - image).mag() * scale ;
+        absorb = 1 / (end - image).mag();
+
+        if (hitPoint.size() == 0) {
+            dir = (end - start).normalize();
+        } else {
+            dir = (hitPoint[0] - start).normalize();
+        }
     }
 
     bool operator<(const Path &p) const
@@ -160,7 +179,7 @@ struct Path
 class Boundry
 {
 public:
-    Mesh mesh;
+    Mesh mesh{Mesh::LINES};
     std::vector<Line> lines;
     int currentIndex = 0;
 
@@ -178,7 +197,7 @@ public:
         addLine(points[1], points[2]);
         addLine(points[2], points[3]);
         addLine(points[3], points[0]);
-        line2Mesh();
+        line2Meshs();
     }
 
     void addLine(Vec2f start, Vec2f end)
@@ -189,7 +208,12 @@ public:
         currentIndex++;
     }
 
-    void line2Mesh()
+    void Line2Mesh(Line line) {
+        mesh.vertex(Vec3f(line.start, 0.0f));
+        mesh.vertex(Vec3f(line.end, 0.0f));
+    }
+
+    void line2Meshs()
     {
         mesh.primitive(Mesh::LINES);
         for (auto &line : lines)
@@ -203,10 +227,11 @@ public:
 struct Listener
 {
     Vec2f pos;
-    int depth = 3;
+    int depth = 10;
     std::set<Path> paths;
+    Vec2f leftDirection = Vec2f(-1, 0);
 
-    void reflectRay(float t, Ray ray, Line *_line, Boundry &boundry, Source &source, Path &p)
+    void reflectRay(float t, Ray2d ray, Line *_line, Boundry &boundry, Source &source, Path &p)
     {
         Vec2f hitPoint = ray(t);
         Vec2f lineDir = (hitPoint - _line->start).normalize();
@@ -214,7 +239,7 @@ struct Listener
         Vec2f vertical = cosTheta * lineDir - ray.dir;
         Vec2f newRayDir = cosTheta * lineDir + vertical;
         // std::cout<<"newRay" <<"cos"<<cosTheta<<"lineDir"<<lineDir<< newRayDir<< "vertical"<<vertical;
-        Ray r(hitPoint, newRayDir);
+        Ray2d r(hitPoint, newRayDir);
 
         Line *hitLine;
         t = -1;
@@ -231,14 +256,14 @@ struct Listener
         float temp = r.circleDetect(source.pos, source.receiveRadius);
         if (temp > alpha && (temp < t || t < alpha))
         {
-            p.start = source.pos;
-            p.end = pos;
+            p.start = pos;
+            p.end = source.pos;
             p.calculateImageSource(boundry.lines);
             paths.insert(p);
         }
         else if (temp < alpha && t > alpha)
         {
-            p.start = source.pos;
+            p.start = pos;
             if (p.indexArray.size() < depth)
             {
                 p.indexArray.push_back(hitLine->index);
@@ -256,7 +281,7 @@ struct Listener
         {
             float t = -1;
             float theta = start + i * offset;
-            Ray r(pos, Vec2f(cosf(theta), sinf(theta)));
+            Ray2d r(pos, Vec2f(cosf(theta), sinf(theta)));
             Path p;
             Line *hitLine;
             // std::cout<<"\n"<<"ray"<<r<<"\n";
@@ -275,15 +300,15 @@ struct Listener
 
             if (temp > alpha && (temp < t || t < alpha))
             {
-                p.start = source.pos;
-                p.end = pos;
+                p.start = pos;
+                p.end = source.pos;
                 p.calculateImageSource(boundry.lines);
                 paths.insert(p);
                 // std::cout<< r(temp) << std::endl;
             }
             else if (t > alpha)
             {
-                p.start = source.pos;
+                p.start = pos;
                 p.indexArray.push_back(hitLine->index);
                 p.hitPoint.push_back(r(t));
                 reflectRay(t, r, hitLine, boundry, source, p);
@@ -292,3 +317,13 @@ struct Listener
         }
     }
 };
+
+void addScene(Boundry& boundry) {
+    boundry.resizeRect(6.0f, 6.0f, Vec2f(0, 0));
+    Vec2f points[6] = {Vec2f(1.65, 0), Vec2f(2, 0), Vec2f(2, 1), Vec2f(1, 1), 
+                       Vec2f(1, 0), Vec2f(1.35, 0)};
+    for (int i = 0; i < 5; i++) {
+        boundry.addLine(points[i], points[i + 1]);
+        boundry.Line2Mesh(Line(points[i], points[i + 1]));
+    }
+}
