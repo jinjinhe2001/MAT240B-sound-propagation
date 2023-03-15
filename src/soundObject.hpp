@@ -5,9 +5,11 @@
 #include <set>
 #include "al/graphics/al_Mesh.hpp"
 #include "al/sound/al_SoundFile.hpp"
+#include "Gamma/Delay.h"
 #include "geometry_helper.hpp"
 
 using namespace al;
+using namespace gam;
 
 #define alpha 1e-5
 
@@ -115,18 +117,22 @@ struct Path
     float absorb = 1.0f;
     float reflectAbsorb = 1.0f;
     float scale = 10.0f;
+    float absorbFactor = 0.95f;
     Vec2f dir;
+   //Delay<float, ipl::Trunc> delayFiliter;
 
     void calculateImageSource(std::vector<Line>& lines) {
         image = start;
         for (auto index : indexArray) {
             Line& line = lines.at(index);
             image = reflectPoint(line.start, line.end, image);
-            reflectAbsorb *= 0.95f;
+            reflectAbsorb *= absorbFactor;
         }
         delay = (end - image).mag() * scale / 340.0f;
         dist = (end - image).mag() * scale ;
-        absorb = 1 / (end - image).mag();
+        absorb = 1 / sqrt((end - image).mag() * scale);
+        //delayFiliter.maxDelay(1.0f);
+		//delayFiliter.delay((end - image).mag() * scale / 340.0f);	
 
         if (hitPoint.size() == 0) {
             dir = (end - start).normalize();
@@ -230,6 +236,8 @@ struct Listener
     int depth = 10;
     std::set<Path> paths;
     Vec2f leftDirection = Vec2f(-1, 0);
+    float absorbFactor = 0.95f;
+    float scale = 10.0f;
 
     void reflectRay(float t, Ray2d ray, Line *_line, Boundry &boundry, Source &source, Path &p)
     {
@@ -258,6 +266,8 @@ struct Listener
         {
             p.start = pos;
             p.end = source.pos;
+            p.absorbFactor = absorbFactor;
+            p.scale = scale;
             p.calculateImageSource(boundry.lines);
             paths.insert(p);
         }
@@ -302,6 +312,8 @@ struct Listener
             {
                 p.start = pos;
                 p.end = source.pos;
+                p.absorbFactor = absorbFactor;
+                p.scale = scale;
                 p.calculateImageSource(boundry.lines);
                 paths.insert(p);
                 // std::cout<< r(temp) << std::endl;

@@ -26,6 +26,11 @@ struct MyApp : App
   Listener listener;
   std::vector<Mesh> rays;
   Vec2f listenerDir;
+  Vec2f lineDir;
+  float lineLength;
+  float absorbFactor = 0.95f;
+  float scale = 10.0f;
+
   std::mutex mLock;
   bool enableAddLine = false;
 
@@ -202,11 +207,11 @@ struct MyApp : App
           Vec2f dir = path.dir;
           float cosTheta = dir.dot(listener.leftDirection);
           if (cosTheta > 0) {
-            io.out(0) += s * path.absorb * path.reflectAbsorb * (0.0 + 0.5 * cosTheta);
-            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.0);
+            io.out(0) += s * path.absorb * path.reflectAbsorb * (0.5 + 0.5 * cosTheta);
+            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.5);
           } else {
-            io.out(0) += s * path.absorb * path.reflectAbsorb * 0.0f;
-            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.0 + 0.5 * -cosTheta);
+            io.out(0) += s * path.absorb * path.reflectAbsorb * 0.5f;
+            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.5 + 0.5 * -cosTheta);
           }
         }
         mLock.unlock();
@@ -231,18 +236,66 @@ struct MyApp : App
   {
     imguiBeginFrame();
 
+    int anythingChange = 0;
+
     ImGui::Begin("GUI");
     static bool _enableReflect = true;
     ImGui::Checkbox("Enable reflect", &_enableReflect);
     enableReflect = _enableReflect;
 
+    static float _scale = 10.0f;
+    ImGui::SliderFloat("scale", &_scale, 0.0f, 30.0f);
+    anythingChange += fabs(listener.scale - _scale) < alpha ? 0 : 1;
+    listener.scale = _scale;
+
+    static float _absorb = 0.95f;
+    ImGui::SliderFloat("absorb(reflect)", &_absorb, 0.0f, 1.0f);
+    anythingChange += fabs(_absorb - listener.absorbFactor) < alpha ? 0 : 1;
+    listener.absorbFactor = _absorb;
+    if (anythingChange) {
+      nav().pos(Vec3f(0, 0, 12));
+      nav().faceToward(Vec3f(0, 0, 0));
+      {
+        mLock.lock();
+        listener.paths.clear();
+        listener.scatterRay(500, boundry, source);
+        mLock.unlock();
+      }
+      rays.clear();
+      for (auto p : listener.paths)
+      {
+        Mesh m;
+        m.primitive(Mesh::LINE_STRIP);
+        m.vertex(listener.pos);
+        m.color(RGB(1, 0, 0));
+        for (auto point : p.hitPoint)
+        {
+          m.vertex(Vec3f(point, 0.0f));
+          m.color(RGB(0.5f, 0.5f, 1));
+        }
+        m.vertex(source.pos);
+        m.color(RGB(0, 1, 0));
+        rays.push_back(m);
+      }
+    }
+
     static float vec2a[2] = {-1.0f, 0.0f};
     ImGui::SliderFloat2("Listener Direction", vec2a, -1.0f, 1.0f);
     listener.leftDirection = vec2a;
+    listener.leftDirection = listener.leftDirection.normalize();
 
     static bool _addLine = false;
     ImGui::Checkbox("Add Line", &_addLine);
     enableAddLine = _addLine;
+
+    static float _lineDir[2] = {-1.0f, 0.0f};
+    ImGui::SliderFloat2("Line Direction", _lineDir, -1.0f, 1.0f);
+    lineDir = _lineDir;
+    lineDir = lineDir.normalize();
+
+    static float _lineLength = 1.0f;
+    ImGui::SliderFloat("Line Length", &_lineLength, 0.0f, 5.0f);
+    lineLength = _lineLength;
 
     ImGui::End();
     imguiEndFrame();
@@ -284,11 +337,34 @@ struct MyApp : App
       double a = -r.origin().z / r.direction().z;
       Vec2f hitPoint = Vec2f((a * r.direction() + r.origin()).x, (a * r.direction() + r.origin()).y);
       //std::cout<<"1"<<std::endl;
-      Vec2f start = hitPoint - Vec2f(0.5f, 0);
-      Vec2f end = hitPoint + Vec2f(0.5f, 0);
+      Vec2f start = hitPoint - lineDir.normalize() * lineLength / 2;
+      Vec2f end = hitPoint + lineDir.normalize() * lineLength / 2;
       boundry.addLine(start, end);
       boundry.Line2Mesh(Line(start, end));
-      onAnimate(0);
+      nav().pos(Vec3f(0, 0, 12));
+      nav().faceToward(Vec3f(0, 0, 0));
+      {
+        mLock.lock();
+        listener.paths.clear();
+        listener.scatterRay(500, boundry, source);
+        mLock.unlock();
+      }
+      rays.clear();
+      for (auto p : listener.paths)
+      {
+        Mesh m;
+        m.primitive(Mesh::LINE_STRIP);
+        m.vertex(listener.pos);
+        m.color(RGB(1, 0, 0));
+        for (auto point : p.hitPoint)
+        {
+          m.vertex(Vec3f(point, 0.0f));
+          m.color(RGB(0.5f, 0.5f, 1));
+        }
+        m.vertex(source.pos);
+        m.color(RGB(0, 1, 0));
+        rays.push_back(m);
+      }
     }
     return true;
   }
