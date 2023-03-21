@@ -115,9 +115,9 @@ struct Path
     float dist;
     float delay;
     float absorb = 1.0f;
-    float reflectAbsorb = 1.0f;
+    float reflectAbsorb[5] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
     float scale = 10.0f;
-    float absorbFactor = 0.95f;
+    float absorbFactor[5] = {0.95f, 0.95f, 0.95f, 0.95f, 0.95f};
     Vec2f dir;
    //Delay<float, ipl::Trunc> delayFiliter;
 
@@ -126,7 +126,8 @@ struct Path
         for (auto index : indexArray) {
             Line& line = lines.at(index);
             image = reflectPoint(line.start, line.end, image);
-            reflectAbsorb *= absorbFactor;
+            for (int i = 0; i < 5; i++)
+                reflectAbsorb[i] *= absorbFactor[i];
         }
         delay = (end - image).mag() * scale / 340.0f;
         dist = (end - image).mag() * scale ;
@@ -236,7 +237,7 @@ struct Listener
     int depth = 10;
     std::set<Path> paths;
     Vec2f leftDirection = Vec2f(-1, 0);
-    float absorbFactor = 0.95f;
+    float absorbFactor[5] = {0.95f, 0.95f, 0.95f, 0.95f, 0.95f};
     float scale = 10.0f;
 
     void reflectRay(float t, Ray2d ray, Line *_line, Boundry &boundry, Source &source, Path &p)
@@ -266,7 +267,9 @@ struct Listener
         {
             p.start = pos;
             p.end = source.pos;
-            p.absorbFactor = absorbFactor;
+            for (int i = 0; i < 5; i++) {
+                p.absorbFactor[i] = absorbFactor[i];
+            }
             p.scale = scale;
             p.calculateImageSource(boundry.lines);
             paths.insert(p);
@@ -312,7 +315,9 @@ struct Listener
             {
                 p.start = pos;
                 p.end = source.pos;
-                p.absorbFactor = absorbFactor;
+                for (int i = 0; i < 5; i++) {
+                    p.absorbFactor[i] = absorbFactor[i];
+                }
                 p.scale = scale;
                 p.calculateImageSource(boundry.lines);
                 paths.insert(p);

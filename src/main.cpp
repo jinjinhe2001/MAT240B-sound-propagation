@@ -13,6 +13,7 @@
 #include "al/io/al_Imgui.hpp"
 #include "al/math/al_Ray.hpp"
 #include "soundObject.hpp"
+#include "Gamma/Filter.h"
 
 // reference: http://gamma.cs.unc.edu/GSOUND/gsound_aes41st.pdf, http://gamma.cs.unc.edu/SOUND09/
 // Next Step: Paths de-duplication, generate image source from paths, then apply to sound
@@ -35,6 +36,10 @@ struct MyApp : App
   bool enableAddLine = false;
 
   bool enableReflect = true;
+  Biquad<> bq[5][500];		// Biquad filter
+  int fre[5] = {1000, 2000, 4000, 8000, 16000};
+
+  float earDiff;
 
   void onCreate() override
   {
@@ -46,6 +51,12 @@ struct MyApp : App
     source.pos = Vec2f(0, 0);
     listener.pos = Vec2f(1, -1);
     listener.scatterRay(500, boundry, source);
+    for (int j = 0; j < 5; j++) {
+      for (int i = 0; i < 500; i++) {
+        bq[j][i].type(gam::BAND_PASS);
+        bq[j][i].freq(fre[j]);
+      }
+    }
     for (auto p : listener.paths)
     {
       Mesh m;
@@ -195,6 +206,7 @@ struct MyApp : App
         mLock.lock();
         io.out(0) = 0;
         io.out(1) = 0;
+        int indexBQ = 0;
         for (auto path : listener.paths)
         {
           long long int index = source.playerTS.player.frame + idx;
@@ -207,12 +219,21 @@ struct MyApp : App
           Vec2f dir = path.dir;
           float cosTheta = dir.dot(listener.leftDirection);
           if (cosTheta > 0) {
-            io.out(0) += s * path.absorb * path.reflectAbsorb * (0.5 + 0.5 * cosTheta);
-            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.5);
+            float totalS = 0;
+            for (int i = 0; i < 5; i++) {
+              totalS += bq[i][indexBQ](s) * path.reflectAbsorb[i];
+            }
+            io.out(0) += totalS * path.absorb * (earDiff + 0.5 * cosTheta);
+            io.out(1) += totalS * path.absorb * (earDiff);  
           } else {
-            io.out(0) += s * path.absorb * path.reflectAbsorb * 0.5f;
-            io.out(1) += s * path.absorb * path.reflectAbsorb * (0.5 + 0.5 * -cosTheta);
+            float totalS = 0;
+            for (int i = 0; i < 5; i++) {
+              totalS += bq[i][indexBQ](s) * path.reflectAbsorb[i];
+            }
+            io.out(0) += totalS * path.absorb * earDiff;
+            io.out(1) += totalS * path.absorb * (earDiff + 0.5 * -cosTheta);
           }
+          indexBQ++;
         }
         mLock.unlock();
       }
@@ -243,15 +264,45 @@ struct MyApp : App
     ImGui::Checkbox("Enable reflect", &_enableReflect);
     enableReflect = _enableReflect;
 
+    static float _earDiff = 0.5f;
+    ImGui::SliderFloat("_earDiff", &_earDiff, 0.0f, 1.0f);
+    earDiff = (1.0f - _earDiff) / 2.0f;
+
+    static float vec2a[2] = {-1.0f, 0.0f};
+    ImGui::SliderFloat2("Listener Direction", vec2a, -1.0f, 1.0f);
+    listener.leftDirection = vec2a;
+    listener.leftDirection = listener.leftDirection.normalize();
+
     static float _scale = 10.0f;
-    ImGui::SliderFloat("scale", &_scale, 0.0f, 30.0f);
+    ImGui::SliderFloat("scale", &_scale, 0.0f, 25.0f);
     anythingChange += fabs(listener.scale - _scale) < alpha ? 0 : 1;
     listener.scale = _scale;
 
-    static float _absorb = 0.95f;
-    ImGui::SliderFloat("absorb(reflect)", &_absorb, 0.0f, 1.0f);
-    anythingChange += fabs(_absorb - listener.absorbFactor) < alpha ? 0 : 1;
-    listener.absorbFactor = _absorb;
+    static float _absorb0 = 0.95f;
+    ImGui::SliderFloat("absorb fre 1000", &_absorb0, 0.0f, 1.0f);
+    anythingChange += fabs(_absorb0 - listener.absorbFactor[0]) < alpha ? 0 : 1;
+    listener.absorbFactor[0] = _absorb0;
+
+    static float _absorb1 = 0.95f;
+    ImGui::SliderFloat("absorb fre 2000", &_absorb1, 0.0f, 1.0f);
+    anythingChange += fabs(_absorb1 - listener.absorbFactor[1]) < alpha ? 0 : 1;
+    listener.absorbFactor[1] = _absorb1;
+
+    static float _absorb2 = 0.95f;
+    ImGui::SliderFloat("absorb fre 4000", &_absorb2, 0.0f, 1.0f);
+    anythingChange += fabs(_absorb2 - listener.absorbFactor[2]) < alpha ? 0 : 1;
+    listener.absorbFactor[2] = _absorb2;
+
+    static float _absorb3 = 0.95f;
+    ImGui::SliderFloat("absorb fre 8000", &_absorb3, 0.0f, 1.0f);
+    anythingChange += fabs(_absorb3 - listener.absorbFactor[3]) < alpha ? 0 : 1;
+    listener.absorbFactor[3] = _absorb3;
+
+    static float _absorb4 = 0.95f;
+    ImGui::SliderFloat("absorb fre 16000", &_absorb4, 0.0f, 1.0f);
+    anythingChange += fabs(_absorb4 - listener.absorbFactor[4]) < alpha ? 0 : 1;
+    listener.absorbFactor[4] = _absorb4;
+
     if (anythingChange) {
       nav().pos(Vec3f(0, 0, 12));
       nav().faceToward(Vec3f(0, 0, 0));
@@ -278,11 +329,6 @@ struct MyApp : App
         rays.push_back(m);
       }
     }
-
-    static float vec2a[2] = {-1.0f, 0.0f};
-    ImGui::SliderFloat2("Listener Direction", vec2a, -1.0f, 1.0f);
-    listener.leftDirection = vec2a;
-    listener.leftDirection = listener.leftDirection.normalize();
 
     static bool _addLine = false;
     ImGui::Checkbox("Add Line", &_addLine);
@@ -331,7 +377,7 @@ struct MyApp : App
   
   bool onMouseDown(const Mouse &m) override
   {
-    if (enableAddLine) {
+    if (enableAddLine && !isImguiUsingInput()) {
       Rayd r = getPickRay(m.x(), m.y());
       if (fabs(r.direction().z) < alpha) return false;
       double a = -r.origin().z / r.direction().z;
@@ -374,6 +420,6 @@ int main()
 {
   MyApp app;
   app.configureAudio(44100, 512, 2, 0);
-  app.dimensions(600, 400);
+  app.dimensions(1080, 720);
   app.start();
 }
