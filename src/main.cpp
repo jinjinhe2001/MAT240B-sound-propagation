@@ -16,7 +16,6 @@
 #include "Gamma/Filter.h"
 
 // reference: http://gamma.cs.unc.edu/GSOUND/gsound_aes41st.pdf, http://gamma.cs.unc.edu/SOUND09/
-// Next Step: Paths de-duplication, generate image source from paths, then apply to sound
 // further step: Spatial division(octree), doppler shifting, GUI
 using namespace al;
 
@@ -51,10 +50,14 @@ struct MyApp : App
     source.pos = Vec2f(0, 0);
     listener.pos = Vec2f(1, -1);
     listener.scatterRay(500, boundry, source);
+    Domain::master().spu(audioIO().framesPerSecond());
     for (int j = 0; j < 5; j++) {
       for (int i = 0; i < 500; i++) {
         bq[j][i].type(gam::BAND_PASS);
         bq[j][i].freq(fre[j]);
+
+        //float oneOverQ = 2*sinh(0.34657359028 * (float)fre[j] / 2.0f);
+        //bq[j][i].res(0.5f / oneOverQ);
       }
     }
     for (auto p : listener.paths)
