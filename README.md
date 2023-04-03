@@ -19,4 +19,5 @@ git clone --recurse-submodules https://github.com/jinjinhe2001/MAT201B-physics-a
 
 https://user-images.githubusercontent.com/72654824/229414823-158429df-9f83-40ad-8352-50fe9bcf307f.mp4
 
-https://jinjinhe2001.github.io/images/MAT/sound.png
+![sound propagation](https://jinjinhe2001.github.io/images/MAT/sound.png)
+
